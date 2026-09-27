@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Buyer Portal</title>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:system-ui,sans-serif;}
+body{background:#111;color:#fff;padding:20px;line-height:1.6;}
+.container{max-width:1100px;margin:0 auto;}
+h2{margin-bottom:20px;}
+.goods-grid{display:grid;grid-template-columns:repeat(auto-fill, minmax(260px,1fr));gap:16px;}
+.goods-card{background:#222;padding:16px;border-radius:10px;}
+.goods-card img{width:100%;height:180px;object-fit:cover;border-radius:6px;}
+.order-area{margin-top:30px;padding:20px;background:#2a2a2a;border-radius:8px;}
+button{padding:10px 18px;border:none;border-radius:6px;cursor:pointer;margin:4px;}
+.btn-blue{background:#3b82f6;color:white;}
+.btn-green{background:#10b981;color:white;}
+.btn-red{background:#ef4444;color:white;}
+input[type="number"]{width:80px;padding:8px;background:#333;border:none;color:#fff;border-radius:6px;}
+</style>
+</head>
+<body>
+<div class="container">
+  <h2>Product List - Buyer Portal</h2>
+  <div class="goods-grid" id="buyerGoods"></div>
+  <div class="order-area" id="orderBox">
+    <h3>Your Order</h3>
+    <div id="orderList"></div>
+    <button class="btn-green" onclick="exportOrderPDF()">Export Order PDF</button>
+    <button class="btn-red" onclick="clearOrder()">Clear Order</button>
+  </div>
+</div>
+
+<script>
+const { jsPDF } = window.jspdf;
+let cart = [];
+
+function getGoods(){
+  const raw = localStorage.getItem("goods");
+  return raw ? JSON.parse(raw) : [];
+}
+
+function addCart(item, num){
+  const exist = cart.find(c=>c.id === item.id);
+  if(exist){
+    exist.num += Number(num);
+  }else{
+    cart.push({...item, num:Number(num)});
+  }
+  renderOrder();
+}
+
+function clearOrder(){
+  cart = [];
+  renderOrder();
+}
+
+function getGoodById(id){
+  return getGoods().find(g=>g.id === id);
+}
+
+function renderBuyerGoods(){
+  const wrap = document.getElementById('buyerGoods');
+  const goods = getGoods();
+  wrap.innerHTML = "";
+  goods.forEach(g=>{
+    wrap.innerHTML += `
+      <div class="goods-card">
+        <img src="${g.img}" alt="${g.name}">
+        <h4>${g.name}</h4>
+        <p style="font-size:18px; color:#3b82f6">$${g.price.toFixed(2)}</p>
+        <p>${g.desc}</p>
+        <div>
+          <input type="number" value="1" min="1" id="num_${g.id}">
+          <button class="btn-blue" onclick="addCart(getGoodById(${g.id}), document.getElementById('num_${g.id}').value)">Add to Order</button>
+        </div>
+      </div>
+    `
+  })
+}
+
+function renderOrder(){
+  const wrap = document.getElementById('orderList');
+  let html = "";
+  let total = 0;
+  cart.forEach(c=>{
+    const sub = c.price * c.num;
+    total += sub;
+    html += `<p>${c.name} ×${c.num}  Subtotal: $${sub.toFixed(2)}</p>`
+  })
+  html += `<p style="font-weight:bold;">Total Amount: $${total.toFixed(2)}</p>`
+  wrap.innerHTML = html;
+}
+
+// Load image helper
+function loadImage(src){
+  return new Promise((resolve, reject)=>{
+    const img = new Image();
+    img.onload = ()=>resolve(img);
+    img.onerror = ()=>resolve(null);
+    img.src = src;
+  })
+}
+
+async function exportOrderPDF(){
+  if(cart.length===0){alert("Your order is empty!");return;}
+  const doc = new jsPDF({unit:"mm",format:"a4"});
+  let y = 15;
+  const margin = 12;
+  const imgW = 45;
+  const imgH = 45;
+
+  // Order header
+  const now = new Date();
+  const orderTime = now.toLocaleString();
+  const orderId = "ORD-" + Date.now();
+  const totalItemsCount = cart.reduce((sum,item)=> sum + item.num, 0);
+  const itemLinesCount = cart.length;
+
+  doc.setFontSize(18);
+  doc.text("ORDER DETAILS", margin, y);
+  y += 10;
+  doc.setFontSize(10);
+  doc.text(`Order ID: ${orderId}`, margin, y);
+  y += 5;
+  doc.text(`Order Date: ${orderTime}`, margin, y);
+  y += 5;
+  doc.text(`Total Item Quantity: ${totalItemsCount}`, margin, y);
+  doc.text(`Number of Different Products: ${itemLinesCount}`, margin + 100, y);
+  y +=12;
+  doc.setFontSize(11);
+
+  let grandTotal = 0;
+  for(const item of cart){
+    if(y > 260){
+      doc.addPage();
+      y = 15;
+    }
+    const img = await loadImage(item.img);
+    if(img){
+      doc.addImage(item.img, "JPEG", margin, y, imgW, imgH);
+    }
+    doc.text(`Name: ${item.name}`, margin + imgW + 4, y + 6);
+    doc.text(`Qty: ${item.num} | Unit Price: $${item.price.toFixed(2)}`, margin + imgW + 4, y +11);
+    const subTotal = item.price * item.num;
+    grandTotal += subTotal;
+    doc.text(`Subtotal: $${subTotal.toFixed(2)}`, margin + imgW + 4, y +16);
+    doc.text(`Desc: ${item.desc}`, margin + imgW + 4, y +21);
+    y += imgH + 8;
+  }
+
+  if(y > 250){
+    doc.addPage();
+    y = 15;
+  }
+  doc.setFontSize(14);
+  doc.text(`GRAND TOTAL: $${grandTotal.toFixed(2)}`, margin, y);
+  doc.save("Order.pdf");
+}
+
+renderBuyerGoods();
+renderOrder();
+</script>
+</body>
+</html>
